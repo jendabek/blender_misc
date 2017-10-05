@@ -35,12 +35,15 @@ import array
 import os
 import time
 import bpy
+import copy
 import mathutils
 from bpy_extras.io_utils import unpack_list
 from bpy_extras.image_utils import load_image
 
 from progress_report import ProgressReport, ProgressReportSubstep
 
+verts_with_vcol = []
+verts_vcols = []
 
 def line_value(line_split):
     """
@@ -456,7 +459,6 @@ def split_mesh(verts_loc, faces, unique_materials, filepath, SPLIT_OB_OR_GROUP):
     Takes vert_loc and faces, and separates into multiple sets of
     (verts_loc, faces, unique_materials, dataname)
     """
-
     filename = os.path.splitext((os.path.basename(filepath)))[0]
 
     if not SPLIT_OB_OR_GROUP or not faces:
@@ -477,6 +479,10 @@ def split_mesh(verts_loc, faces, unique_materials, filepath, SPLIT_OB_OR_GROUP):
 
     oldkey = -1  # initialize to a value that will never match the key
 
+    
+    global verts_vcols
+    verts_vcols_split = []
+
     for face in faces:
         key = face[5]
 
@@ -495,12 +501,17 @@ def split_mesh(verts_loc, faces, unique_materials, filepath, SPLIT_OB_OR_GROUP):
             use_verts_tex.append(True)
 
         # Remap verts to new vert list and add where needed
+        set_vcols = (len(verts_vcols) == len(verts_loc))
         for enum, i in enumerate(face_vert_loc_indices):
             map_index = vert_remap.get(i)
             if map_index is None:
                 map_index = len(verts_split)
                 vert_remap[i] = map_index  # set the new remapped index so we only add once and can reference next time.
                 verts_split.append(verts_loc[i])  # add the vert to the local verts
+                if set_vcols:
+                    verts_vcols_split.append(verts_vcols[i])
+                # print(len(verts_loc))
+                # print(len())
 
             face_vert_loc_indices[enum] = map_index  # remap to the local index
 
@@ -511,6 +522,9 @@ def split_mesh(verts_loc, faces, unique_materials, filepath, SPLIT_OB_OR_GROUP):
         faces_split.append(face)
 
     # remove one of the items and reorder
+    verts_vcols = copy.copy(verts_vcols_split)
+    verts_vcols_split = []
+    # print(len(verts_vcols_split))
     return [(verts_split, faces_split, unique_materials_split, key_to_name(key), bool(use_vnor), bool(use_vtex))
             for key, (verts_split, faces_split, unique_materials_split, _, use_vnor, use_vtex)
             in face_split_dict.items()]
@@ -532,7 +546,7 @@ def create_mesh(new_objects,
     Takes all the data gathered and generates a mesh, adding the new object to new_objects
     deals with ngons, sharp edges and assigning materials
     """
-
+    
     if unique_smooth_groups:
         sharp_edges = set()
         smooth_group_users = {context_smooth_group: {} for context_smooth_group in unique_smooth_groups.keys()}
@@ -765,6 +779,35 @@ def create_mesh(new_objects,
         me.show_edge_sharp = True
 
     ob = bpy.data.objects.new(me.name, me)
+    
+    if len(verts_vcols) > 0:
+        mesh = ob.data
+        mesh.vertex_colors.new()
+        vcol_layer = mesh.vertex_colors["Col"]
+    
+                # print(loop_vert_index)
+                    # if vert == loop_vert_index:
+                # vcol_layer.data[i].color = verts_vcols[loop_vert_index]
+                # print(mesh.loops[loop_index])
+                
+        vertices_all = ob.data.vertices
+        polys_all =  ob.data.polygons
+        i = 0
+        print("xxxxxxxxxxxxxxxxxxxxxxxxxx")
+        
+        
+        # print(len(me.vertices))
+        # print(len(vcol_layer.data))
+        # print(len(me.loops))
+        # print(me.vertices[0].co)
+        for face in me.polygons:
+            verts_in_face = face.vertices[:]
+            for vert in verts_in_face:    
+                vcol_layer.data[i].color = verts_vcols[vert]
+                i += 1
+        global verts_vcols
+        verts_vcols = []
+
     new_objects.append(ob)
 
     # Create the vertex groups. No need to have the flag passed here since we test for the
@@ -907,6 +950,14 @@ def load(context,
             vec += [float_func(v) for v in line_split]
         if not ret_context_multi_line:
             data.append(tuple(vec[:vec_len]))
+        
+        # there is a vcol, hopefully
+        if len(vec) > vec_len:
+            global verts_with_vcol
+            global verts_vcols
+            vert_vector = mathutils.Vector((vec[0], vec[1], vec[2]))
+            verts_with_vcol.append(vert_vector)
+            verts_vcols.append(tuple([vec[3], vec[4], vec[5]]))
         return ret_context_multi_line
 
     def create_face(context_material, context_smooth_group, context_object):
@@ -1198,6 +1249,7 @@ def load(context,
             verts_loc_split, faces_split, unique_materials_split, dataname, use_vnor, use_vtex = data
             # Create meshes from the data, warning 'vertex_groups' wont support splitting
             #~ print(dataname, use_vnor, use_vtex)
+            
             create_mesh(new_objects,
                         use_edges,
                         verts_loc_split,
@@ -1210,7 +1262,6 @@ def load(context,
                         vertex_groups,
                         dataname,
                         )
-
         # nurbs support
         for context_nurbs in nurbs:
             create_nurbs(context_nurbs, verts_loc, new_objects)
