@@ -782,7 +782,7 @@ def create_mesh(new_objects,
         vertices_all = ob.data.vertices
         polys_all =  ob.data.polygons
         i = 0
-        print("xxxxxxxxxxxxxxxxxxxxxxxxxx")
+        #print("xxxxxxxxxxxxxxxxxxxxxxxxxx")
         
         
         #print(len(me.vertices))
